@@ -559,23 +559,17 @@ function checkEnded() {
             } catch(e) {}
         }
     }
-    // SoundCloud is handled by the message event listener in loadPlayer
-    // Spotify has its own handling
 }
 
-// Drag and drop functions
 function handleDragStart(e) {
     if (!e.target.classList.contains('track')) return;
     
-    // Set dragSrc to the dragged element
     dragSrc = e.target;
     
-    // Add a class for styling
     e.target.classList.add('dragging');
     
-    // Set data for dragging
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', ''); // Required for Firefox
+    e.dataTransfer.setData('text/plain', ''); 
 }
 
 function handleDragOver(e) {
@@ -599,37 +593,29 @@ function handleDrop(e) {
     
     if (!dragSrc) return;
     
-    // Find the track being dragged over
     const targetTrack = e.target.closest('.track');
     if (!targetTrack) return;
     
-    // Don't do anything if dropping on the same element
     if (dragSrc === targetTrack) return;
     
-    // Get source and target IDs
     const srcFolderId = dragSrc.getAttribute('data-fid');
     const srcTrackId = dragSrc.getAttribute('data-tid');
     const targetFolderId = targetTrack.getAttribute('data-fid');
     const targetTrackId = targetTrack.getAttribute('data-tid');
     
-    // Only allow reordering within the same folder for now
     if (srcFolderId !== targetFolderId) return;
     
-    // Find the folder
     const folder = lib.folders.find(f => f.id === srcFolderId);
     if (!folder) return;
     
-    // Find indices of source and target tracks
     const srcIndex = folder.tracks.findIndex(t => t.id === srcTrackId);
     const targetIndex = folder.tracks.findIndex(t => t.id === targetTrackId);
     
     if (srcIndex === -1 || targetIndex === -1) return;
     
-    // Reorder the tracks
     const [removedTrack] = folder.tracks.splice(srcIndex, 1);
     folder.tracks.splice(targetIndex, 0, removedTrack);
     
-    // Save and render
     saveLib();
     render();
     
@@ -637,7 +623,6 @@ function handleDrop(e) {
 }
 
 function handleDragEnd(e) {
-    // Remove dragging class from all tracks
     const tracks = document.querySelectorAll('.track');
     tracks.forEach(track => {
         track.classList.remove('dragging');
@@ -651,5 +636,4 @@ window.delT = delT;
 window.play = play;
 window.toggleFolder = toggleFolder;
 
-// Initialize
 document.addEventListener('DOMContentLoaded', init);
