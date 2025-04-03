@@ -1,0 +1,170 @@
+:root {
+    --pri: #4285f4;
+    --sec: #34a853;
+    --dark: #202124;
+    --light: #f8f9fa;
+    --danger: #ea4335;
+    --gray: #dadce0;
+}
+
+body {
+    font-family: 'Segoe UI', sans-serif;
+    margin: 0;
+    padding: 0;
+    background: #f5f5f5;
+    color: #333;
+}
+
+.con {
+    display: flex;
+    height: 100vh;
+}
+
+.side {
+    width: 280px;
+    background: var(--dark);
+    color: white;
+    padding: 15px;
+    overflow-y: auto;
+}
+
+.main {
+    flex: 1;
+    padding: 15px;
+    overflow-y: auto;
+}
+
+h1, h2, h3 { margin-top: 0; }
+
+.btn {
+    background: var(--pri);
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin: 3px;
+}
+
+.btn:hover { opacity: 0.9; }
+.btn.red { background: var(--danger); }
+.btn.green { background: var(--sec); }
+
+input, select {
+    padding: 8px;
+    margin: 5px 0;
+    border: 1px solid var(--gray);
+    border-radius: 4px;
+    width: 100%;
+}
+
+.fold {
+    margin-bottom: 10px;
+    background: rgba(255,255,255,0.1);
+    padding: 10px;
+    border-radius: 5px;
+}
+
+.f-title {
+    font-weight: bold;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tracks {
+    margin-left: 10px;
+}
+
+.track {
+    padding: 5px;
+    margin: 3px 0;
+    border-radius: 3px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.track:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+.track.active {
+    background: rgba(66,133,244,0.3);
+}
+
+.track-label {
+    padding: 3px;
+    flex: 1;
+}
+
+.player {
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin-bottom: 15px;
+}
+
+.form-row {
+    display: flex;
+    gap: 10px;
+}
+
+.form-row > div {
+    flex: 1;
+}
+
+.playing {
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+.s-btn {
+    padding: 3px 6px;
+    font-size: 12px;
+}
+
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+}
+
+.m-content {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    width: 300px;
+    max-width: 90%;
+}
+
+.m-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 15px;
+    gap: 10px;
+}
+
+.controls {
+    display: flex;
+    gap: 10px;
+    margin: 10px 0;
+}
+
+.hidden {
+    position: absolute;
+    left: -9999px;
+    top: -9999px;
+    height: 1px;
+    width: 1px;
+    opacity: 0;
+}
