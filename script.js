@@ -22,6 +22,7 @@ let curTrack = null;
 let isHidden = false;
 let currentPlaybackTime = 0;
 let playbackInterval;
+let dragSrc = null;
 
 function init() {
     loadLib();
@@ -38,11 +39,26 @@ function init() {
     
     // Check for ended tracks at a regular interval
     setInterval(checkEnded, 1000);
+    
+    // Setup drag and drop event delegation
+    fList.addEventListener('dragstart', handleDragStart);
+    fList.addEventListener('dragover', handleDragOver);
+    fList.addEventListener('dragleave', handleDragLeave);
+    fList.addEventListener('drop', handleDrop);
+    fList.addEventListener('dragend', handleDragEnd);
 }
 
 function loadLib() {
     const saved = localStorage.getItem('musicLib');
     if (saved) lib = JSON.parse(saved);
+    
+    // Initialize collapsed state for folders if not exists
+    lib.folders.forEach(f => {
+        if (typeof f.collapsed === 'undefined') {
+            f.collapsed = false;
+        }
+    });
+    saveLib();
 }
 
 function saveLib() {
@@ -64,7 +80,8 @@ function saveF() {
         const newF = {
             id: Date.now().toString(),
             name: name,
-            tracks: []
+            tracks: [],
+            collapsed: false
         };
         
         lib.folders.push(newF);
@@ -86,6 +103,15 @@ function updFSel() {
     });
 }
 
+function toggleFolder(fid) {
+    const folder = lib.folders.find(f => f.id === fid);
+    if (folder) {
+        folder.collapsed = !folder.collapsed;
+        saveLib();
+        render();
+    }
+}
+
 function render() {
     fList.innerHTML = '';
     
@@ -95,18 +121,37 @@ function render() {
         
         const fTitle = d.createElement('div');
         fTitle.className = 'f-title';
+        
+        // Add dropdown arrow and click handler for collapsing
+        const arrow = f.collapsed ? '▶' : '▼';
         fTitle.innerHTML = `
-            <span>${f.name}</span>
+            <div class="fold-header">
+                <span class="fold-arrow">${arrow}</span>
+                <span>${f.name}</span>
+            </div>
             <button class="btn s-btn red" onclick="delF('${f.id}')">Delete</button>
         `;
         
+        // Make the folder title clickable to toggle collapse
+        const foldHeader = fTitle.querySelector('.fold-header');
+        foldHeader.style.cursor = 'pointer';
+        foldHeader.addEventListener('click', () => toggleFolder(f.id));
+        
         const tList = d.createElement('div');
         tList.className = 'tracks';
+        
+        // Hide tracks if folder is collapsed
+        if (f.collapsed) {
+            tList.style.display = 'none';
+        }
         
         if (f.tracks && f.tracks.length > 0) {
             f.tracks.forEach(t => {
                 const tItem = d.createElement('div');
                 tItem.className = 'track';
+                tItem.draggable = true;
+                tItem.setAttribute('data-fid', f.id);
+                tItem.setAttribute('data-tid', t.id);
                 
                 // Add active class if this is the current track
                 if (curTrack && curTrack.fid === f.id && curTrack.tid === t.id) {
@@ -133,14 +178,21 @@ function render() {
                     delT(f.id, t.id);
                 });
                 
+                // Add drag handle
+                const dragHandle = document.createElement('span');
+                dragHandle.innerHTML = '⋮⋮';
+                dragHandle.className = 'drag-handle';
+                dragHandle.title = 'Drag to reorder';
+                
                 // Add elements to track item
+                tItem.appendChild(dragHandle);
                 tItem.appendChild(trackLabel);
                 tItem.appendChild(deleteBtn);
                 
                 // Make the entire track item clickable
                 tItem.addEventListener('click', function(e) {
-                    // Only play if we didn't click on the delete button
-                    if (e.target !== deleteBtn) {
+                    // Only play if we didn't click on the delete button or drag handle
+                    if (e.target !== deleteBtn && e.target !== dragHandle) {
                         play(f.id, t.id);
                     }
                 });
@@ -293,6 +345,18 @@ function loadPlayer(container, t) {
             scIframe.frameBorder = 'no';
             scIframe.src = `https://w.soundcloud.com/player/?url=${encodeURIComponent(t.url)}&auto_play=true`;
             container.appendChild(scIframe);
+            
+            // Add event listener for SoundCloud track end
+            window.addEventListener('message', function(e) {
+                if (e.origin === 'https://w.soundcloud.com') {
+                    try {
+                        const data = JSON.parse(e.data);
+                        if (data.soundcloud && data.soundcloud.events && data.soundcloud.events.onFinish) {
+                            playNext();
+                        }
+                    } catch(err) {}
+                }
+            });
             break;
             
         case 'sp':
@@ -399,16 +463,46 @@ function playNext() {
     if (!curTrack) return;
     
     const [fIdx, tIdx] = getTrackIndex();
-    if (fIdx === -1 || tIdx === -1) return;
+    if (fIdx === -1 || tIdx === -1) {
+        // Current track not found, maybe it was deleted
+        stopPlay();
+        return;
+    }
     
     const f = lib.folders[fIdx];
     let nextIdx = tIdx + 1;
     
     if (nextIdx >= f.tracks.length) {
-        nextIdx = 0;
-    }
-    
-    if (f.tracks.length > 0) {
+        // We reached the end of this folder's tracks
+        // Try to find the next folder with tracks
+        let nextFolderIdx = fIdx + 1;
+        
+        // If we reached the end of folders, loop back to the first folder
+        if (nextFolderIdx >= lib.folders.length) {
+            nextFolderIdx = 0;
+        }
+        
+        // If we've cycled through all folders and are back at the starting folder, stop
+        if (nextFolderIdx === fIdx) {
+            return;
+        }
+        
+        // Find the next folder with at least one track
+        let foundNextTrack = false;
+        while (!foundNextTrack && nextFolderIdx !== fIdx) {
+            const nextFolder = lib.folders[nextFolderIdx];
+            if (nextFolder && nextFolder.tracks && nextFolder.tracks.length > 0) {
+                play(nextFolder.id, nextFolder.tracks[0].id);
+                foundNextTrack = true;
+            } else {
+                nextFolderIdx++;
+                if (nextFolderIdx >= lib.folders.length) {
+                    nextFolderIdx = 0;
+                }
+            }
+        }
+    } else if (f.tracks.length > 0) {
+        // Play the next track in the current folder
         play(f.id, f.tracks[nextIdx].id);
     }
 }
@@ -446,21 +540,117 @@ function checkEnded() {
         const iframe = container.querySelector('#ytPlayer');
         if (iframe && iframe.contentWindow) {
             try {
-                const state = iframe.contentWindow.postMessage('{"event":"command","func":"getPlayerState","args":""}', '*');
-                if (state === 0) {
-                    playNext();
-                }
+                // Advanced YouTube player state checking
+                iframe.contentWindow.postMessage('{"event":"command","func":"getPlayerState","args":""}', '*');
+                
+                // Add a message listener for YouTube player state
+                window.addEventListener('message', function(e) {
+                    // Try to parse the message data
+                    try {
+                        if (typeof e.data === 'string') {
+                            const data = JSON.parse(e.data);
+                            if (data.event === 'infoDelivery' && data.info && data.info.playerState === 0) {
+                                // State 0 means the video has ended
+                                playNext();
+                            }
+                        }
+                    } catch(err) {}
+                }, {once: true});
             } catch(e) {}
         }
     }
-    // For SoundCloud and Spotify, we'll rely on their auto-advance features
-    // and manual controls from the user
+    // SoundCloud is handled by the message event listener in loadPlayer
+    // Spotify has its own handling
+}
+
+// Drag and drop functions
+function handleDragStart(e) {
+    if (!e.target.classList.contains('track')) return;
+    
+    // Set dragSrc to the dragged element
+    dragSrc = e.target;
+    
+    // Add a class for styling
+    e.target.classList.add('dragging');
+    
+    // Set data for dragging
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', ''); // Required for Firefox
+}
+
+function handleDragOver(e) {
+    if (e.preventDefault) {
+        e.preventDefault(); // Allow drop
+    }
+    
+    if (!e.target.closest('.track')) return;
+    
+    e.dataTransfer.dropEffect = 'move';
+    
+    return false;
+}
+
+function handleDragLeave(e) {
+    if (!e.target.closest('.track')) return;
+}
+
+function handleDrop(e) {
+    e.stopPropagation();
+    
+    if (!dragSrc) return;
+    
+    // Find the track being dragged over
+    const targetTrack = e.target.closest('.track');
+    if (!targetTrack) return;
+    
+    // Don't do anything if dropping on the same element
+    if (dragSrc === targetTrack) return;
+    
+    // Get source and target IDs
+    const srcFolderId = dragSrc.getAttribute('data-fid');
+    const srcTrackId = dragSrc.getAttribute('data-tid');
+    const targetFolderId = targetTrack.getAttribute('data-fid');
+    const targetTrackId = targetTrack.getAttribute('data-tid');
+    
+    // Only allow reordering within the same folder for now
+    if (srcFolderId !== targetFolderId) return;
+    
+    // Find the folder
+    const folder = lib.folders.find(f => f.id === srcFolderId);
+    if (!folder) return;
+    
+    // Find indices of source and target tracks
+    const srcIndex = folder.tracks.findIndex(t => t.id === srcTrackId);
+    const targetIndex = folder.tracks.findIndex(t => t.id === targetTrackId);
+    
+    if (srcIndex === -1 || targetIndex === -1) return;
+    
+    // Reorder the tracks
+    const [removedTrack] = folder.tracks.splice(srcIndex, 1);
+    folder.tracks.splice(targetIndex, 0, removedTrack);
+    
+    // Save and render
+    saveLib();
+    render();
+    
+    return false;
+}
+
+function handleDragEnd(e) {
+    // Remove dragging class from all tracks
+    const tracks = document.querySelectorAll('.track');
+    tracks.forEach(track => {
+        track.classList.remove('dragging');
+    });
+    
+    dragSrc = null;
 }
 
 // Global functions for HTML onclick handlers
 window.delF = delF;
 window.delT = delT;
 window.play = play;
+window.toggleFolder = toggleFolder;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', init);
