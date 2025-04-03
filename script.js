@@ -646,7 +646,6 @@ function handleDragEnd(e) {
     dragSrc = null;
 }
 
-// Global functions for HTML onclick handlers
 window.delF = delF;
 window.delT = delT;
 window.play = play;
