@@ -5,12 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Music Controller</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="https://w.soundcloud.com/player/api.js"></script>
 </head>
 <body>
     <div class="con">
         <div class="side">
             <h2>Playlists</h2>
             <button id="nfBtn" class="btn">New Folder</button>
+            <div class="import-export-buttons">
+                <button id="exportBtn" class="btn green" onclick="exportLibrary()">Export Library</button>
+                <label for="importInput" class="btn">Import Library</label>
+                <input type="file" id="importInput" accept=".json" style="display: none;">
+            </div>
             <div id="fList"></div>
         </div>
         
@@ -19,12 +25,10 @@
                 <h2>Music Player</h2>
                 <div class="playing" id="np">No track selected</div>
                 <div class="controls">
-                    <button id="hideBtn" class="btn">Hide Video</button>
                     <button id="prevBtn" class="btn">Previous</button>
                     <button id="nextBtn" class="btn">Next</button>
                 </div>
                 <div id="pCon"></div>
-                <div id="hiddenPlayer" class="hidden"></div>
             </div>
             
             <div>
