@@ -11,18 +11,16 @@ const tName = d.getElementById('tName');
 const tType = d.getElementById('tType');
 const tUrl = d.getElementById('tUrl');
 const pCon = d.getElementById('pCon');
-const hiddenPlayer = d.getElementById('hiddenPlayer');
 const np = d.getElementById('np');
-const hideBtn = d.getElementById('hideBtn');
 const nextBtn = d.getElementById('nextBtn');
 const prevBtn = d.getElementById('prevBtn');
 
 let lib = {folders: []};
-let curTrack = null;
-let isHidden = false;
-let currentPlaybackTime = 0;
-let playbackInterval;
+let cur = null;
+let ytP = null;
+let ytReady = false;
 let dragSrc = null;
+let scW = null;
 
 function init() {
     loadLib();
@@ -33,26 +31,40 @@ function init() {
     sBtn.addEventListener('click', saveF);
     cBtn.addEventListener('click', hideModal);
     addBtn.addEventListener('click', addTrack);
-    hideBtn.addEventListener('click', toggleHide);
     nextBtn.addEventListener('click', playNext);
     prevBtn.addEventListener('click', playPrev);
     
-    // Check for ended tracks at a regular interval
-    setInterval(checkEnded, 1000);
+    const importInput = d.getElementById('importInput');
+    if (importInput) {
+        importInput.addEventListener('change', importLib);
+    }
     
-    // Setup drag and drop event delegation
-    fList.addEventListener('dragstart', handleDragStart);
-    fList.addEventListener('dragover', handleDragOver);
-    fList.addEventListener('dragleave', handleDragLeave);
-    fList.addEventListener('drop', handleDrop);
-    fList.addEventListener('dragend', handleDragEnd);
+    setInterval(checkEnd, 1000);
+    
+    fList.addEventListener('dragstart', dragStart);
+    fList.addEventListener('dragover', dragOver);
+    fList.addEventListener('dragleave', dragLeave);
+    fList.addEventListener('drop', drop);
+    fList.addEventListener('dragend', dragEnd);
+    
+    window.onYouTubeIframeAPIReady = function() {
+        ytReady = true;
+    };
+    
+    loadYtAPI();
+}
+
+function loadYtAPI() {
+    const tag = d.createElement('script');
+    tag.src = "https://www.youtube.com/iframe_api";
+    const firstScriptTag = d.getElementsByTagName('script')[0];
+    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
 }
 
 function loadLib() {
     const saved = localStorage.getItem('musicLib');
     if (saved) lib = JSON.parse(saved);
     
-    // Initialize collapsed state for folders if not exists
     lib.folders.forEach(f => {
         if (typeof f.collapsed === 'undefined') {
             f.collapsed = false;
@@ -122,7 +134,6 @@ function render() {
         const fTitle = d.createElement('div');
         fTitle.className = 'f-title';
         
-        // Add dropdown arrow and click handler for collapsing
         const arrow = f.collapsed ? '▶' : '▼';
         fTitle.innerHTML = `
             <div class="fold-header">
@@ -132,7 +143,6 @@ function render() {
             <button class="btn s-btn red" onclick="delF('${f.id}')">Delete</button>
         `;
         
-        // Make the folder title clickable to toggle collapse
         const foldHeader = fTitle.querySelector('.fold-header');
         foldHeader.style.cursor = 'pointer';
         foldHeader.addEventListener('click', () => toggleFolder(f.id));
@@ -140,7 +150,6 @@ function render() {
         const tList = d.createElement('div');
         tList.className = 'tracks';
         
-        // Hide tracks if folder is collapsed
         if (f.collapsed) {
             tList.style.display = 'none';
         }
@@ -153,45 +162,38 @@ function render() {
                 tItem.setAttribute('data-fid', f.id);
                 tItem.setAttribute('data-tid', t.id);
                 
-                // Add active class if this is the current track
-                if (curTrack && curTrack.fid === f.id && curTrack.tid === t.id) {
+                if (cur && cur.fid === f.id && cur.tid === t.id) {
                     tItem.classList.add('active');
                 }
                 
-                // Create track label and delete button elements
-                const trackLabel = document.createElement('span');
+                const trackLabel = d.createElement('span');
                 trackLabel.textContent = t.name;
                 trackLabel.className = 'track-label';
                 trackLabel.style.cursor = 'pointer';
                 trackLabel.style.flex = '1';
                 
-                // Add click event to the whole track label
                 trackLabel.addEventListener('click', function() {
                     play(f.id, t.id);
                 });
                 
-                const deleteBtn = document.createElement('button');
+                const deleteBtn = d.createElement('button');
                 deleteBtn.className = 'btn s-btn red';
                 deleteBtn.textContent = 'Delete';
                 deleteBtn.addEventListener('click', function(e) {
-                    e.stopPropagation(); // Prevent track play when clicking delete
+                    e.stopPropagation();
                     delT(f.id, t.id);
                 });
                 
-                // Add drag handle
-                const dragHandle = document.createElement('span');
+                const dragHandle = d.createElement('span');
                 dragHandle.innerHTML = '⋮⋮';
                 dragHandle.className = 'drag-handle';
                 dragHandle.title = 'Drag to reorder';
                 
-                // Add elements to track item
                 tItem.appendChild(dragHandle);
                 tItem.appendChild(trackLabel);
                 tItem.appendChild(deleteBtn);
                 
-                // Make the entire track item clickable
                 tItem.addEventListener('click', function(e) {
-                    // Only play if we didn't click on the delete button or drag handle
                     if (e.target !== deleteBtn && e.target !== dragHandle) {
                         play(f.id, t.id);
                     }
@@ -251,7 +253,7 @@ function delF(fid) {
         render();
         updFSel();
         
-        if (curTrack && curTrack.fid === fid) {
+        if (cur && cur.fid === fid) {
             stopPlay();
         }
     }
@@ -264,28 +266,26 @@ function delT(fid, tid) {
         saveLib();
         render();
         
-        if (curTrack && curTrack.fid === fid && curTrack.tid === tid) {
+        if (cur && cur.fid === fid && cur.tid === tid) {
             playNext();
         }
     }
 }
 
 function stopPlay() {
-    clearCurrentPlayer();
-    np.textContent = 'No track selected';
-    curTrack = null;
-    isHidden = false;
-    
-    if (playbackInterval) {
-        clearInterval(playbackInterval);
-        playbackInterval = null;
+    if (ytP) {
+        ytP.destroy();
+        ytP = null;
     }
-}
-
-function clearCurrentPlayer() {
+    
+    if (scW) {
+        scW.unbind(SC.Widget.Events.FINISH);
+        scW = null;
+    }
+    
     pCon.innerHTML = '';
-    hiddenPlayer.innerHTML = '';
-    currentPlaybackTime = 0;
+    np.textContent = 'No track selected';
+    cur = null;
 }
 
 function play(fid, tid) {
@@ -295,21 +295,23 @@ function play(fid, tid) {
     const t = f.tracks.find(t => t.id === tid);
     if (!t) return;
     
-    // Clear any currently playing track first
-    clearCurrentPlayer();
+    if (ytP) {
+        ytP.destroy();
+        ytP = null;
+    }
     
-    curTrack = { fid, tid, f, t };
+    if (scW) {
+        scW.unbind(SC.Widget.Events.FINISH);
+        scW = null;
+    }
+    
+    pCon.innerHTML = '';
+    
+    cur = { fid, tid, f, t };
     np.textContent = `Now Playing: ${t.name}`;
     
-    // Reset the hidden state when playing a new track
-    isHidden = false;
-    hideBtn.textContent = 'Hide Video';
-    
     render();
-    loadPlayer(isHidden ? hiddenPlayer : pCon, t);
-    
-    // Start tracking playback
-    startPlaybackTracking();
+    loadPlayer(pCon, t);
 }
 
 function loadPlayer(container, t) {
@@ -325,15 +327,35 @@ function loadPlayer(container, t) {
             }
             
             if (vid) {
-                const iframe = d.createElement('iframe');
-                iframe.width = '100%';
-                iframe.height = '315';
-                iframe.src = `https://www.youtube.com/embed/${vid}?autoplay=1&enablejsapi=1`;
-                iframe.frameBorder = '0';
-                iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
-                iframe.allowFullscreen = true;
-                iframe.id = 'ytPlayer';
-                container.appendChild(iframe);
+                if (ytReady) {
+                    const playerDiv = d.createElement('div');
+                    playerDiv.id = 'ytPlayer';
+                    container.appendChild(playerDiv);
+                    
+                    ytP = new YT.Player('ytPlayer', {
+                        height: '315',
+                        width: '100%',
+                        videoId: vid,
+                        playerVars: {
+                            'autoplay': 1,
+                            'controls': 1
+                        },
+                        events: {
+                            'onStateChange': onYtStateChange
+                        }
+                    });
+                } else {
+                    loadYtAPI();
+                    const iframe = d.createElement('iframe');
+                    iframe.width = '100%';
+                    iframe.height = '315';
+                    iframe.src = `https://www.youtube.com/embed/${vid}?autoplay=1&enablejsapi=1`;
+                    iframe.frameBorder = '0';
+                    iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+                    iframe.allowFullscreen = true;
+                    iframe.id = 'ytPlayer';
+                    container.appendChild(iframe);
+                }
             }
             break;
             
@@ -344,19 +366,18 @@ function loadPlayer(container, t) {
             scIframe.scrolling = 'no';
             scIframe.frameBorder = 'no';
             scIframe.src = `https://w.soundcloud.com/player/?url=${encodeURIComponent(t.url)}&auto_play=true`;
+            scIframe.id = 'scPlayer';
             container.appendChild(scIframe);
             
-            // Add event listener for SoundCloud track end
-            window.addEventListener('message', function(e) {
-                if (e.origin === 'https://w.soundcloud.com') {
-                    try {
-                        const data = JSON.parse(e.data);
-                        if (data.soundcloud && data.soundcloud.events && data.soundcloud.events.onFinish) {
-                            playNext();
-                        }
-                    } catch(err) {}
-                }
-            });
+            setTimeout(() => {
+                scW = SC.Widget(scIframe);
+                scW.bind(SC.Widget.Events.FINISH, playNext);
+                scW.bind(SC.Widget.Events.READY, () => {
+                    scW.bind(SC.Widget.Events.PLAY, () => {
+                        scW.bind(SC.Widget.Events.FINISH, playNext);
+                    });
+                });
+            }, 1000);
             break;
             
         case 'sp':
@@ -369,6 +390,7 @@ function loadPlayer(container, t) {
                 spIframe.height = '352';
                 spIframe.frameBorder = '0';
                 spIframe.allow = 'encrypted-media';
+                spIframe.id = 'spotify-iframe';
                 container.appendChild(spIframe);
             }
             break;
@@ -380,91 +402,37 @@ function loadPlayer(container, t) {
             audio.autoplay = true;
             audio.style.width = '100%';
             audio.src = t.url;
-            
-            // Set the current time if we have one saved
-            if (currentPlaybackTime > 0) {
-                audio.currentTime = currentPlaybackTime;
-            }
-            
             audio.onended = playNext;
             audio.onerror = function() {
                 alert("Cannot play this audio. Check URL.");
+                playNext();
             };
             container.appendChild(audio);
             break;
     }
 }
 
-function toggleHide() {
-    if (!curTrack) return;
-    
-    // Save current playback position before changing
-    updateCurrentPlaybackTime();
-    
-    isHidden = !isHidden;
-    
-    if (isHidden) {
-        hideBtn.textContent = 'Show Video';
-        
-        // First load in hidden player
-        hiddenPlayer.innerHTML = '';
-        loadPlayer(hiddenPlayer, curTrack.t);
-        
-        // Then empty visible container
-        pCon.innerHTML = '<div style="text-align:center;padding:20px;">Video hidden - audio still playing</div>';
-    } else {
-        hideBtn.textContent = 'Hide Video';
-        
-        // First load in visible player
-        pCon.innerHTML = '';
-        loadPlayer(pCon, curTrack.t);
-        
-        // Then empty hidden container
-        hiddenPlayer.innerHTML = '';
+function onYtStateChange(event) {
+    if (event.data === YT.PlayerState.ENDED) {
+        playNext();
     }
-}
-
-function startPlaybackTracking() {
-    if (playbackInterval) {
-        clearInterval(playbackInterval);
-    }
-    
-    // Update playback time every second
-    playbackInterval = setInterval(updateCurrentPlaybackTime, 1000);
-}
-
-function updateCurrentPlaybackTime() {
-    if (!curTrack) return;
-    
-    // Get the current player based on hidden state
-    const container = isHidden ? hiddenPlayer : pCon;
-    
-    if (curTrack.t.type === 'audio') {
-        const audio = container.querySelector('#aPlayer');
-        if (audio && !isNaN(audio.currentTime)) {
-            currentPlaybackTime = audio.currentTime;
-        }
-    }
-    // For YouTube, SoundCloud and Spotify, we can't easily get the current time
-    // so we'll keep using the interval-based tracking for track end detection
 }
 
 function getTrackIndex() {
-    if (!curTrack) return [-1, -1];
+    if (!cur) return [-1, -1];
     
-    const fIdx = lib.folders.findIndex(f => f.id === curTrack.fid);
+    const fIdx = lib.folders.findIndex(f => f.id === cur.fid);
     if (fIdx === -1) return [-1, -1];
     
-    const tIdx = lib.folders[fIdx].tracks.findIndex(t => t.id === curTrack.tid);
+    const tIdx = lib.folders[fIdx].tracks.findIndex(t => t.id === cur.tid);
     return [fIdx, tIdx];
 }
 
 function playNext() {
-    if (!curTrack) return;
+    if (!cur) return;
     
     const [fIdx, tIdx] = getTrackIndex();
     if (fIdx === -1 || tIdx === -1) {
-        // Current track not found, maybe it was deleted
         stopPlay();
         return;
     }
@@ -473,27 +441,22 @@ function playNext() {
     let nextIdx = tIdx + 1;
     
     if (nextIdx >= f.tracks.length) {
-        // We reached the end of this folder's tracks
-        // Try to find the next folder with tracks
         let nextFolderIdx = fIdx + 1;
         
-        // If we reached the end of folders, loop back to the first folder
         if (nextFolderIdx >= lib.folders.length) {
             nextFolderIdx = 0;
         }
         
-        // If we've cycled through all folders and are back at the starting folder, stop
         if (nextFolderIdx === fIdx) {
             return;
         }
         
-        // Find the next folder with at least one track
-        let foundNextTrack = false;
-        while (!foundNextTrack && nextFolderIdx !== fIdx) {
+        let found = false;
+        while (!found && nextFolderIdx !== fIdx) {
             const nextFolder = lib.folders[nextFolderIdx];
             if (nextFolder && nextFolder.tracks && nextFolder.tracks.length > 0) {
                 play(nextFolder.id, nextFolder.tracks[0].id);
-                foundNextTrack = true;
+                found = true;
             } else {
                 nextFolderIdx++;
                 if (nextFolderIdx >= lib.folders.length) {
@@ -502,13 +465,12 @@ function playNext() {
             }
         }
     } else if (f.tracks.length > 0) {
-        // Play the next track in the current folder
         play(f.id, f.tracks[nextIdx].id);
     }
 }
 
 function playPrev() {
-    if (!curTrack) return;
+    if (!cur) return;
     
     const [fIdx, tIdx] = getTrackIndex();
     if (fIdx === -1 || tIdx === -1) return;
@@ -525,78 +487,62 @@ function playPrev() {
     }
 }
 
-function checkEnded() {
-    if (!curTrack) return;
+function checkEnd() {
+    if (!cur) return;
     
-    // Get the current player container based on hidden state
-    const container = isHidden ? hiddenPlayer : pCon;
-    
-    if (curTrack.t.type === 'audio') {
-        const audio = container.querySelector('#aPlayer');
+    if (cur.t.type === 'audio') {
+        const audio = pCon.querySelector('#aPlayer');
         if (audio && audio.ended) {
             playNext();
         }
-    } else if (curTrack.t.type === 'yt') {
-        const iframe = container.querySelector('#ytPlayer');
-        if (iframe && iframe.contentWindow) {
-            try {
-                // Advanced YouTube player state checking
-                iframe.contentWindow.postMessage('{"event":"command","func":"getPlayerState","args":""}', '*');
-                
-                // Add a message listener for YouTube player state
-                window.addEventListener('message', function(e) {
-                    // Try to parse the message data
-                    try {
-                        if (typeof e.data === 'string') {
-                            const data = JSON.parse(e.data);
-                            if (data.event === 'infoDelivery' && data.info && data.info.playerState === 0) {
-                                // State 0 means the video has ended
-                                playNext();
-                            }
-                        }
-                    } catch(err) {}
-                }, {once: true});
-            } catch(e) {}
-        }
+    } else if (cur.t.type === 'yt' && ytP) {
+        try {
+            const state = ytP.getPlayerState();
+            if (state === YT.PlayerState.ENDED) {
+                playNext();
+            }
+        } catch (e) {}
+    } else if (cur.t.type === 'sc' && scW) {
+        try {
+            scW.getPosition(pos => {
+                scW.getDuration(dur => {
+                    if (pos >= dur - 1000) {
+                        playNext();
+                    }
+                });
+            });
+        } catch (e) {}
     }
 }
 
-function handleDragStart(e) {
+function dragStart(e) {
     if (!e.target.classList.contains('track')) return;
     
     dragSrc = e.target;
-    
     e.target.classList.add('dragging');
-    
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', ''); 
+    e.dataTransfer.setData('text/plain', '');
 }
 
-function handleDragOver(e) {
-    if (e.preventDefault) {
-        e.preventDefault(); // Allow drop
-    }
-    
+function dragOver(e) {
+    if (e.preventDefault) e.preventDefault();
     if (!e.target.closest('.track')) return;
     
     e.dataTransfer.dropEffect = 'move';
-    
     return false;
 }
 
-function handleDragLeave(e) {
+function dragLeave(e) {
     if (!e.target.closest('.track')) return;
 }
 
-function handleDrop(e) {
+function drop(e) {
     e.stopPropagation();
     
     if (!dragSrc) return;
     
     const targetTrack = e.target.closest('.track');
-    if (!targetTrack) return;
-    
-    if (dragSrc === targetTrack) return;
+    if (!targetTrack || dragSrc === targetTrack) return;
     
     const srcFolderId = dragSrc.getAttribute('data-fid');
     const srcTrackId = dragSrc.getAttribute('data-tid');
@@ -622,7 +568,7 @@ function handleDrop(e) {
     return false;
 }
 
-function handleDragEnd(e) {
+function dragEnd(e) {
     const tracks = document.querySelectorAll('.track');
     tracks.forEach(track => {
         track.classList.remove('dragging');
@@ -631,9 +577,57 @@ function handleDragEnd(e) {
     dragSrc = null;
 }
 
+function exportLibrary() {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(lib));
+    
+    const a = d.createElement('a');
+    a.setAttribute("href", dataStr);
+    a.setAttribute("download", "music_library_backup.json");
+    d.body.appendChild(a);
+    a.click();
+    a.remove();
+}
+
+function importLib(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const impLib = JSON.parse(e.target.result);
+            
+            if (!impLib.folders || !Array.isArray(impLib.folders)) {
+                throw new Error("Invalid library format");
+            }
+            
+            if (confirm("Replace current library?")) {
+                lib = impLib;
+                saveLib();
+                render();
+                updFSel();
+                alert("Library imported!");
+            }
+        } catch (error) {
+            alert("Error importing: " + error.message);
+        }
+    };
+    reader.readAsText(file);
+    
+    event.target.value = '';
+}
+
 window.delF = delF;
 window.delT = delT;
 window.play = play;
 window.toggleFolder = toggleFolder;
+window.exportLibrary = exportLibrary;
+window.importLib = importLib;
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+    const scScript = d.createElement('script');
+    scScript.src = "https://w.soundcloud.com/player/api.js";
+    d.head.appendChild(scScript);
+    
+    init();
+});
