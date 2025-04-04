@@ -197,3 +197,20 @@ input, select {
     width: 1px;
     opacity: 0;
 }
+
+.import-export-buttons {
+    display: flex;
+    margin: 10px 0;
+    gap: 5px;
+}
+
+.import-export-buttons .btn {
+    flex: 1;
+    text-align: center;
+    font-size: 12px;
+}
+
+label.btn {
+    display: inline-block;
+    cursor: pointer;
+}
